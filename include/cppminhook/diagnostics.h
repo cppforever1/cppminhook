@@ -39,6 +39,7 @@ void set_log_callback(LogCallback callback) noexcept;
 void report_diagnostic(const DiagnosticContext& context) noexcept;
 void report_diagnostic(Status status, const char* operation, unsigned long systemError = 0) noexcept;
 [[nodiscard]] DiagnosticContext last_diagnostic() noexcept;
+[[nodiscard]] std::string default_log_file_path();
 [[nodiscard]] std::string format_diagnostic(const DiagnosticContext& context);
 [[nodiscard]] std::string format_last_diagnostic();
 [[nodiscard]] std::string format_diagnostic_json(const DiagnosticContext& context);

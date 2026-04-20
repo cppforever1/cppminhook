@@ -25,7 +25,7 @@ CppMinHook is an original C++20 Windows hooking project built around classes ins
 - `include/cppminhook/status.h`: status codes and string conversion.
 - `include/cppminhook/memory_protection.h`: page protection guard around `VirtualProtect`.
 - `include/cppminhook/trampoline_buffer.h`: executable trampoline allocation.
-- `include/cppminhook/diagnostics.h`: last-error context and optional logger callback.
+- `include/cppminhook/diagnostics.h`: last-error context, default per-run file logger, and optional callback override.
 - `include/cppminhook/hook.h`: single hook object that owns patching state.
 - `include/cppminhook/hook_engine.h`: manager for multiple hooks.
 - `tests/test_main.cpp`: fixture, stress, rollback, transaction, and fuzz-like tests run through CTest.
@@ -93,7 +93,8 @@ The demo creates a small executable code block in memory, installs a hook, calls
 - API resolution helpers for loaded modules through `resolve_api_target` and `create_hook_api`.
 - Mutex-guarded engine mutation APIs for safer concurrent usage.
 - Rollback-capable queued apply path when one queued hook update fails.
-- Optional diagnostics context and logging callback support for failures.
+- Default diagnostics file logging active from process start; each run creates a new uniquely-named log file.
+- Custom logging callback support via `set_log_callback`; overrides the default file logger.
 - Per-hook policy object (`HookOptions`) for strictness and decoder backend selection.
 
 ## Decoder backends
@@ -127,6 +128,43 @@ The demo creates a small executable code block in memory, installs a hook, calls
 - Use queued APIs when changing multiple hooks, and check returned status after every operation.
 - Use diagnostics helpers to inspect operation name and Windows error values on failures.
 - Structured diagnostic JSON output is available via `format_diagnostic_json` and `format_last_diagnostic_json`.
+- Default file logging writes one JSON line per diagnostic event to a uniquely-named file in the working directory.
+- Retrieve the active log file path at runtime with `cppminhook::default_log_file_path()`.
+- Override or disable default file logging with `set_log_callback(myCallback)` or `set_log_callback(nullptr)`.
+
+## Default diagnostics logging
+
+Logging is active automatically on every run without any setup. A new file is created each time the process starts, named after the current timestamp and process ID:
+
+```
+cppminhook_20260420_153042_123_pid12345.log
+```
+
+Each line in the log is a JSON-formatted diagnostic event. Example:
+
+```json
+{"status":"unsupported_target","code":"unsupported_instruction","operation":"Hook::create.patch_size_too_small","patchSize":3,"systemError":0}
+```
+
+To query the log path from code:
+
+```cpp
+std::string path = cppminhook::default_log_file_path();
+```
+
+To replace the default logger with your own callback:
+
+```cpp
+cppminhook::set_log_callback([](const cppminhook::DiagnosticContext& ctx) {
+    // your handler
+});
+```
+
+To disable logging entirely:
+
+```cpp
+cppminhook::set_log_callback(nullptr);
+```
 
 ## Thread-safety guarantees
 

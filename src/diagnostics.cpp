@@ -1,7 +1,14 @@
 #include "cppminhook/diagnostics.h"
 
 #include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <mutex>
 #include <sstream>
+#include <string>
+#include <windows.h>
 
 #include "cppminhook/status.h"
 
@@ -9,8 +16,55 @@ namespace cppminhook {
 
 namespace {
 
+void default_log_callback(const DiagnosticContext& context) noexcept;
+
+[[nodiscard]] std::string make_default_log_path() {
+    const auto now = std::chrono::system_clock::now();
+    const auto nowTime = std::chrono::system_clock::to_time_t(now);
+    const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+    std::tm localTime{};
+    localtime_s(&localTime, &nowTime);
+
+    std::ostringstream fileName;
+    fileName << "cppminhook_";
+    fileName << std::put_time(&localTime, "%Y%m%d_%H%M%S");
+    fileName << '_' << std::setw(3) << std::setfill('0') << milliseconds.count();
+    fileName << "_pid" << static_cast<unsigned long>(::GetCurrentProcessId()) << ".log";
+
+    const std::filesystem::path filePath = std::filesystem::current_path() / fileName.str();
+    return filePath.string();
+}
+
 thread_local DiagnosticContext g_lastDiagnostic{};
-std::atomic<LogCallback> g_logCallback{nullptr};
+const std::string g_defaultLogPath = make_default_log_path();
+std::ofstream g_defaultLogStream;
+std::once_flag g_defaultLogInitFlag;
+std::mutex g_defaultLogMutex;
+std::atomic<LogCallback> g_logCallback{default_log_callback};
+
+void ensure_default_log_open() {
+    std::call_once(g_defaultLogInitFlag, []() {
+        g_defaultLogStream.open(g_defaultLogPath, std::ios::out | std::ios::trunc);
+    });
+}
+
+const bool g_defaultLogInitialized = []() {
+    ensure_default_log_open();
+    return true;
+}();
+
+void default_log_callback(const DiagnosticContext& context) noexcept {
+    ensure_default_log_open();
+
+    std::lock_guard<std::mutex> lock(g_defaultLogMutex);
+    if (!g_defaultLogStream.is_open()) {
+        return;
+    }
+
+    g_defaultLogStream << format_diagnostic_json(context) << '\n';
+    g_defaultLogStream.flush();
+}
 
 [[nodiscard]] DiagnosticCode default_code_from_status(Status status) noexcept {
     switch (status) {
@@ -87,6 +141,10 @@ void report_diagnostic(Status status, const char* operation, unsigned long syste
 
 DiagnosticContext last_diagnostic() noexcept {
     return g_lastDiagnostic;
+}
+
+std::string default_log_file_path() {
+    return g_defaultLogPath;
 }
 
 std::string format_diagnostic(const DiagnosticContext& context) {
